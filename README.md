@@ -4,11 +4,11 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![CI](https://github.com/zsh-contrib/zsh-utm/actions/workflows/ci.yml/badge.svg)](https://github.com/zsh-contrib/zsh-utm/actions/workflows/ci.yml)
 
-Stop clicking through the UTM window. `zsh-utm` adds a single `utm` command that drives [UTM](https://mac.getutm.app) through its [AppleScript interface](https://docs.getutm.app/scripting/cheat-sheet/), with tab completion for subcommands, virtual machine names and snapshot names.
+Stop clicking through the UTM window. `zsh-utm` adds a single `utm` command on top of `utmctl`, the command line tool that ships with [UTM](https://mac.getutm.app), with tab completion for subcommands, virtual machine names and snapshot names, and a `--wait` that `utmctl` does not have.
 
 ## Requirements
 
-- macOS with [UTM](https://mac.getutm.app) installed
+- macOS with [UTM](https://mac.getutm.app) installed, which provides `utmctl` (the Homebrew cask links it onto your `PATH`, otherwise the plugin uses the copy inside `UTM.app`)
 - [gum](https://github.com/charmbracelet/gum) (`gum`, optional — logs fall back to plain stderr)
 
 The first time you run `utm`, macOS asks whether your terminal may control UTM. Allow it under System Settings → Privacy & Security → Automation.
@@ -87,25 +87,28 @@ Print the status of one virtual machine (`started`, `stopped`, ...), or of all o
 
 ### `utm snapshot <vm> [action] [name]`
 
-Snapshots are only available for QEMU virtual machines, and UTM's scripting interface cannot delete them.
+Snapshots are only available for QEMU virtual machines.
 
 ```bash
-utm snapshot Ubuntu                  # list, newest first
-utm snapshot Ubuntu create clean     # save the current state
-utm snapshot Ubuntu restore clean    # go back to it
+utm snapshot Ubuntu                      # list, newest first
+utm snapshot Ubuntu create clean         # save the current state
+utm snapshot Ubuntu restore clean        # go back to it
+utm snapshot Ubuntu overwrite clean      # replace it with the current state
+utm snapshot Ubuntu rename clean fresh   # rename it
+utm snapshot Ubuntu delete fresh         # remove it
 ```
 
 ## How It Works
 
-Each subcommand runs a short AppleScript through `osascript`. Virtual machine and snapshot names are passed as script arguments rather than spliced into the script, so names with quotes or spaces are safe. `--wait` polls `status of vm` once a second until the machine reaches the target status or `ZSH_UTM_TIMEOUT` runs out.
+Each subcommand calls `utmctl` and keeps the output stable, so scripts keep working: `utm list` prints `name<TAB>status` even though `utmctl list` prints `UUID Status Name`, and `utm status <vm>` prints only the status word. Virtual machine and snapshot names are passed as single arguments, so names with quotes or spaces are safe. `utmctl` stops a machine by force unless told otherwise, so `utm stop` asks the guest to shut down explicitly. `--wait` polls `utmctl status` once a second until the machine reaches the target status or `ZSH_UTM_TIMEOUT` runs out.
 
 Tab completion asks UTM for virtual machine and snapshot names, so the first completion can take a moment (and launches UTM if it is not running).
 
 ## Troubleshooting
 
-- **`Not authorized to send Apple events to UTM`** — allow your terminal under System Settings → Privacy & Security → Automation.
-- **Snapshot commands fail** — snapshots need a QEMU virtual machine; Apple Virtualization machines do not support them.
-- **`--wait` times out** — raise `ZSH_UTM_TIMEOUT`, and check the guest actually honors a shutdown request (otherwise use `-f`).
+- **`utmctl not found`**: install UTM, or link it yourself with `ln -s /Applications/UTM.app/Contents/MacOS/utmctl /opt/homebrew/bin/utmctl`.
+- **Snapshot commands fail**: snapshots need a QEMU virtual machine, Apple Virtualization machines do not support them.
+- **`--wait` times out**: raise `ZSH_UTM_TIMEOUT`, and check the guest actually honors a shutdown request (otherwise use `-f`).
 
 ## The zsh-contrib Ecosystem
 

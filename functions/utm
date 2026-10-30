@@ -6,14 +6,14 @@ _utm_usage() {
     cat <<EOF
 Usage: utm <command> [options] [arguments]
 
-Control UTM virtual machines through its AppleScript interface.
+Control UTM virtual machines through utmctl, the command line tool of UTM.
 
 Commands:
   list                           List virtual machines and their status
   start <vm>                     Start a virtual machine
   stop <vm>                      Stop a virtual machine
   status [vm]                    Show the status of one or all virtual machines
-  snapshot <vm> [action] [name]  List, create or restore snapshots (QEMU only)
+  snapshot <vm> [action] [name]  Manage snapshots (QEMU only)
 
 A <vm> is a virtual machine name or UUID.
 
@@ -34,6 +34,9 @@ snapshot actions:
   list                     List snapshots, newest first (default)
   create <name>            Save the current state as a new snapshot
   restore <name>           Replace the current state with a snapshot
+  overwrite <name>         Replace a snapshot with the current state
+  delete <name>            Delete a snapshot
+  rename <name> <new>      Rename a snapshot
 
 Examples:
   utm list                          # All virtual machines with status
@@ -42,6 +45,7 @@ Examples:
   utm status Ubuntu                 # Print status (started, stopped, ...)
   utm snapshot Ubuntu create clean  # Save a snapshot named "clean"
   utm snapshot Ubuntu restore clean # Go back to it
+  utm snapshot Ubuntu delete clean  # Remove it
 
 Environment Variables:
   ZSH_UTM_TIMEOUT                 Seconds to wait with --wait (default: 60)
@@ -143,7 +147,7 @@ _utm_status() {
     fi
 }
 
-# utm snapshot <vm> [list|create <name>|restore <name>]
+# utm snapshot <vm> [list|create|restore|overwrite|delete <name>|rename <name> <new>]
 _utm_snapshot() {
     local -a opt_help
     zparseopts -D -E h=opt_help -help=opt_help
@@ -168,14 +172,25 @@ _utm_snapshot() {
     list)
         _zsh_utm_snapshot_list "$vm"
         ;;
-    create | restore)
+    create | restore | overwrite | delete)
         if [[ -z "$name" ]]; then
             _zsh_utm_log error "Missing required argument: snapshot name"
             return 1
         fi
 
+        local -A done=(create created restore restored overwrite overwritten delete deleted)
+
         _zsh_utm_snapshot_${action} "$vm" "$name" || return 1
-        _zsh_utm_log info "Snapshot '$name' ${action}d on '$vm'"
+        _zsh_utm_log info "Snapshot '$name' ${done[$action]} on '$vm'"
+        ;;
+    rename)
+        if [[ -z "$name" || -z "$4" ]]; then
+            _zsh_utm_log error "Missing required argument: snapshot name and new name"
+            return 1
+        fi
+
+        _zsh_utm_snapshot_rename "$vm" "$name" "$4" || return 1
+        _zsh_utm_log info "Snapshot '$name' renamed to '$4' on '$vm'"
         ;;
     *)
         _zsh_utm_log error "Unknown snapshot action: $action"

@@ -17,7 +17,7 @@ _utm_vms() {
 
 # Snapshot names of the virtual machine given as the first argument
 _utm_snapshots() {
-    [[ "${line[2]}" == restore ]] || return 1
+    [[ "${line[2]}" == (restore|overwrite|delete|rename) ]] || return 1
 
     local -a snapshots
     snapshots=(${(f)"$(_zsh_utm_snapshot_list "${line[1]}" 2>/dev/null)"})
@@ -39,7 +39,7 @@ _utm() {
         'start:Start a virtual machine'
         'stop:Stop a virtual machine'
         'status:Show the status of one or all virtual machines'
-        'snapshot:List, create or restore snapshots'
+        'snapshot:Manage snapshots'
     )
 
     _arguments -C \
@@ -80,7 +80,7 @@ _utm() {
                     _arguments -s -S \
                         '(-h --help)'{-h,--help}'[Show help message]' \
                         '1:virtual machine:_utm_vms' \
-                        '2:action:(list create restore)' \
+                        '2:action:(list create restore overwrite delete rename)' \
                         '3:snapshot:_utm_snapshots'
                     ;;
             esac

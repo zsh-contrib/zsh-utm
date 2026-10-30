@@ -22,7 +22,8 @@ fi
 export GUM_LOG_LEVEL
 
 # Load library files
-source "${ZSH_UTM_PLUGIN_DIR}/lib/applescript.zsh"
+source "${ZSH_UTM_PLUGIN_DIR}/lib/log.zsh"
+source "${ZSH_UTM_PLUGIN_DIR}/lib/utmctl.zsh"
 source "${ZSH_UTM_PLUGIN_DIR}/lib/vm.zsh"
 source "${ZSH_UTM_PLUGIN_DIR}/lib/snapshot.zsh"
 
