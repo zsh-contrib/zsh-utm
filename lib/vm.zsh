@@ -1,16 +1,18 @@
 #!/usr/bin/env zsh
-# lib/vm.zsh - virtual machine operations
+# lib/vm.zsh - virtual machine operations, done by utmctl
 
 # List virtual machines as "name<TAB>status" lines
+# utmctl prints "UUID Status Name" and a name can contain spaces.
 # Usage: _zsh_utm_list
 _zsh_utm_list() {
-    _zsh_utm_osascript 'tell application "UTM"
-    set out to ""
-    repeat with vm in virtual machines
-        set out to out & (name of vm) & tab & (status of vm) & linefeed
-    end repeat
-    return out
-end tell'
+    local output
+    output=$(_zsh_utm_ctl list) || return 1
+
+    print -r -- "$output" | awk 'NR > 1 {
+        status = $2
+        match($0, /^[^ ]+ +[^ ]+ +/)
+        print substr($0, RLENGTH + 1) "\t" status
+    }'
 }
 
 # List virtual machine names, one per line
@@ -22,7 +24,7 @@ _zsh_utm_names() {
 # Print the status of a virtual machine (started, stopped, paused, ...)
 # Usage: _zsh_utm_status <vm>
 _zsh_utm_status() {
-    _zsh_utm_vm_run "$1" 'return (status of vm) as text'
+    _zsh_utm_ctl status "$1"
 }
 
 # Wait until a virtual machine reaches one of the given statuses
@@ -52,23 +54,24 @@ _zsh_utm_start() {
     local disposable="$2"
 
     if [[ "$disposable" == "true" ]]; then
-        _zsh_utm_vm_run "$vm" 'start vm without saving'
+        _zsh_utm_ctl start "$vm" --disposable
     else
-        _zsh_utm_vm_run "$vm" 'start vm'
+        _zsh_utm_ctl start "$vm"
     fi
 }
 
 # Stop a virtual machine
+# utmctl stops by force unless told otherwise, so a request is passed explicitly.
 # Usage: _zsh_utm_stop <vm> <request|force|kill|suspend>
 _zsh_utm_stop() {
     local vm="$1"
     local mode="$2"
 
     case "$mode" in
-    request) _zsh_utm_vm_run "$vm" 'stop vm' ;;
-    force)   _zsh_utm_vm_run "$vm" 'stop vm by force' ;;
-    kill)    _zsh_utm_vm_run "$vm" 'stop vm by kill' ;;
-    suspend) _zsh_utm_vm_run "$vm" 'suspend vm with saving' ;;
+    request) _zsh_utm_ctl stop "$vm" --request ;;
+    force)   _zsh_utm_ctl stop "$vm" --force ;;
+    kill)    _zsh_utm_ctl stop "$vm" --kill ;;
+    suspend) _zsh_utm_ctl suspend "$vm" --save-state ;;
     *)
         _zsh_utm_log error "Unknown stop mode: $mode"
         return 1

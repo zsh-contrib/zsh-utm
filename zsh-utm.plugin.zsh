@@ -10,6 +10,7 @@ ZSH_UTM_PLUGIN_DIR="${0:h}"
 
 # Default settings
 : ${ZSH_UTM_TIMEOUT:=60}
+: ${ZSH_UTM_DOCUMENTS:="$HOME/Library/Containers/com.utmapp.UTM/Data/Documents"}
 : ${GUM_LOG_LEVEL:="info"}
 
 # DEBUG support: if DEBUG=1, enable debug logging and shell tracing
@@ -22,7 +23,10 @@ fi
 export GUM_LOG_LEVEL
 
 # Load library files
+source "${ZSH_UTM_PLUGIN_DIR}/lib/log.zsh"
+source "${ZSH_UTM_PLUGIN_DIR}/lib/utmctl.zsh"
 source "${ZSH_UTM_PLUGIN_DIR}/lib/applescript.zsh"
+source "${ZSH_UTM_PLUGIN_DIR}/lib/create.zsh"
 source "${ZSH_UTM_PLUGIN_DIR}/lib/vm.zsh"
 source "${ZSH_UTM_PLUGIN_DIR}/lib/snapshot.zsh"
 
