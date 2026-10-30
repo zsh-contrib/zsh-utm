@@ -1,0 +1,217 @@
+#!/usr/bin/env zsh
+# utm - Control UTM virtual machines from the shell
+
+# Usage information
+_utm_usage() {
+    cat <<EOF
+Usage: utm <command> [options] [arguments]
+
+Control UTM virtual machines through its AppleScript interface.
+
+Commands:
+  list                           List virtual machines and their status
+  start <vm>                     Start a virtual machine
+  stop <vm>                      Stop a virtual machine
+  status [vm]                    Show the status of one or all virtual machines
+  snapshot <vm> [action] [name]  List, create or restore snapshots (QEMU only)
+
+A <vm> is a virtual machine name or UUID.
+
+Options:
+  -h, --help               Show this help message
+
+start options:
+  -d, --disposable         Start without saving changes to disk
+  -w, --wait               Wait until the virtual machine has started
+
+stop options:
+  -f, --force              Force shutdown
+  -k, --kill               Kill the virtual machine process
+  -s, --suspend            Suspend and save state instead of shutting down
+  -w, --wait               Wait until the virtual machine has stopped
+
+snapshot actions:
+  list                     List snapshots, newest first (default)
+  create <name>            Save the current state as a new snapshot
+  restore <name>           Replace the current state with a snapshot
+
+Examples:
+  utm list                          # All virtual machines with status
+  utm start Ubuntu -w               # Start and wait until running
+  utm stop Ubuntu -f                # Force shutdown
+  utm status Ubuntu                 # Print status (started, stopped, ...)
+  utm snapshot Ubuntu create clean  # Save a snapshot named "clean"
+  utm snapshot Ubuntu restore clean # Go back to it
+
+Environment Variables:
+  ZSH_UTM_TIMEOUT                 Seconds to wait with --wait (default: 60)
+  GUM_LOG_LEVEL                   Log level: error, warn, info, debug (default: info)
+  DEBUG                           Convenience: sets GUM_LOG_LEVEL=debug and enables xtrace
+
+EOF
+}
+
+# utm list
+_utm_list() {
+    _zsh_utm_list
+}
+
+# utm start <vm> [-d] [-w]
+_utm_start() {
+    local -a opt_disposable opt_wait opt_help
+    zparseopts -D -E \
+        d=opt_disposable -disposable=opt_disposable \
+        w=opt_wait -wait=opt_wait \
+        h=opt_help -help=opt_help
+
+    if [[ -n "$opt_help" ]]; then
+        _utm_usage
+        return 0
+    fi
+
+    if [[ $# -eq 0 ]]; then
+        _zsh_utm_log error "Missing required argument: vm"
+        echo ""
+        _utm_usage
+        return 1
+    fi
+
+    local vm="$1"
+    local disposable="false"
+    [[ -n "$opt_disposable" ]] && disposable="true"
+
+    _zsh_utm_start "$vm" "$disposable" || return 1
+
+    if [[ -n "$opt_wait" ]]; then
+        _zsh_utm_wait "$vm" "$ZSH_UTM_TIMEOUT" started || return 1
+    fi
+
+    _zsh_utm_log info "Started '$vm'"
+}
+
+# utm stop <vm> [-f|-k|-s] [-w]
+_utm_stop() {
+    local -a opt_force opt_kill opt_suspend opt_wait opt_help
+    zparseopts -D -E \
+        f=opt_force -force=opt_force \
+        k=opt_kill -kill=opt_kill \
+        s=opt_suspend -suspend=opt_suspend \
+        w=opt_wait -wait=opt_wait \
+        h=opt_help -help=opt_help
+
+    if [[ -n "$opt_help" ]]; then
+        _utm_usage
+        return 0
+    fi
+
+    if [[ $# -eq 0 ]]; then
+        _zsh_utm_log error "Missing required argument: vm"
+        echo ""
+        _utm_usage
+        return 1
+    fi
+
+    local vm="$1"
+    local mode="request"
+    [[ -n "$opt_force" ]] && mode="force"
+    [[ -n "$opt_kill" ]] && mode="kill"
+    [[ -n "$opt_suspend" ]] && mode="suspend"
+
+    _zsh_utm_stop "$vm" "$mode" || return 1
+
+    if [[ -n "$opt_wait" ]]; then
+        _zsh_utm_wait "$vm" "$ZSH_UTM_TIMEOUT" stopped paused || return 1
+    fi
+
+    _zsh_utm_log info "Stopped '$vm'"
+}
+
+# utm status [vm]
+_utm_status() {
+    local -a opt_help
+    zparseopts -D -E h=opt_help -help=opt_help
+
+    if [[ -n "$opt_help" ]]; then
+        _utm_usage
+        return 0
+    fi
+
+    if [[ $# -eq 0 ]]; then
+        _zsh_utm_list
+    else
+        _zsh_utm_status "$1"
+    fi
+}
+
+# utm snapshot <vm> [list|create <name>|restore <name>]
+_utm_snapshot() {
+    local -a opt_help
+    zparseopts -D -E h=opt_help -help=opt_help
+
+    if [[ -n "$opt_help" ]]; then
+        _utm_usage
+        return 0
+    fi
+
+    if [[ $# -eq 0 ]]; then
+        _zsh_utm_log error "Missing required argument: vm"
+        echo ""
+        _utm_usage
+        return 1
+    fi
+
+    local vm="$1"
+    local action="${2:-list}"
+    local name="$3"
+
+    case "$action" in
+    list)
+        _zsh_utm_snapshot_list "$vm"
+        ;;
+    create | restore)
+        if [[ -z "$name" ]]; then
+            _zsh_utm_log error "Missing required argument: snapshot name"
+            return 1
+        fi
+
+        _zsh_utm_snapshot_${action} "$vm" "$name" || return 1
+        _zsh_utm_log info "Snapshot '$name' ${action}d on '$vm'"
+        ;;
+    *)
+        _zsh_utm_log error "Unknown snapshot action: $action"
+        return 1
+        ;;
+    esac
+}
+
+# Main function
+utm() {
+    local command="$1"
+
+    case "$command" in
+    -h | --help | help)
+        _utm_usage
+        return 0
+        ;;
+    "")
+        _utm_usage
+        return 1
+        ;;
+    esac
+
+    shift
+
+    case "$command" in
+    list) _utm_list "$@" ;;
+    start) _utm_start "$@" ;;
+    stop) _utm_stop "$@" ;;
+    status) _utm_status "$@" ;;
+    snapshot) _utm_snapshot "$@" ;;
+    *)
+        _zsh_utm_log error "Unknown command: $command"
+        echo ""
+        _utm_usage
+        return 1
+        ;;
+    esac
+}

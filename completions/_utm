@@ -1,0 +1,91 @@
+#!/usr/bin/env zsh
+#compdef utm
+
+# Completion for utm command
+
+# Virtual machine names (queries UTM, so the first <TAB> can be slow)
+_utm_vms() {
+    local -a vms
+    vms=(${(f)"$(_zsh_utm_names 2>/dev/null)"})
+
+    if [[ ${#vms[@]} -gt 0 ]]; then
+        _describe 'virtual machine' vms
+    else
+        _message "no virtual machines found"
+    fi
+}
+
+# Snapshot names of the virtual machine given as the first argument
+_utm_snapshots() {
+    [[ "${line[2]}" == restore ]] || return 1
+
+    local -a snapshots
+    snapshots=(${(f)"$(_zsh_utm_snapshot_list "${line[1]}" 2>/dev/null)"})
+
+    if [[ ${#snapshots[@]} -gt 0 ]]; then
+        _describe 'snapshot' snapshots
+    else
+        _message "no snapshots found"
+    fi
+}
+
+_utm() {
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    local -a commands
+    commands=(
+        'list:List virtual machines and their status'
+        'start:Start a virtual machine'
+        'stop:Stop a virtual machine'
+        'status:Show the status of one or all virtual machines'
+        'snapshot:List, create or restore snapshots'
+    )
+
+    _arguments -C \
+        '(-h --help)'{-h,--help}'[Show help message]' \
+        '1:command:->command' \
+        '*::arg:->args' \
+        && return 0
+
+    case "$state" in
+        command)
+            _describe 'command' commands
+            ;;
+
+        args)
+            case "${line[1]}" in
+                start)
+                    _arguments -s -S \
+                        '(-d --disposable)'{-d,--disposable}'[Start without saving changes to disk]' \
+                        '(-w --wait)'{-w,--wait}'[Wait until started]' \
+                        '(-h --help)'{-h,--help}'[Show help message]' \
+                        '1:virtual machine:_utm_vms'
+                    ;;
+                stop)
+                    _arguments -s -S \
+                        '(-f --force -k --kill -s --suspend)'{-f,--force}'[Force shutdown]' \
+                        '(-f --force -k --kill -s --suspend)'{-k,--kill}'[Kill the VM process]' \
+                        '(-f --force -k --kill -s --suspend)'{-s,--suspend}'[Suspend and save state]' \
+                        '(-w --wait)'{-w,--wait}'[Wait until stopped]' \
+                        '(-h --help)'{-h,--help}'[Show help message]' \
+                        '1:virtual machine:_utm_vms'
+                    ;;
+                status)
+                    _arguments -s -S \
+                        '(-h --help)'{-h,--help}'[Show help message]' \
+                        '1:virtual machine:_utm_vms'
+                    ;;
+                snapshot)
+                    _arguments -s -S \
+                        '(-h --help)'{-h,--help}'[Show help message]' \
+                        '1:virtual machine:_utm_vms' \
+                        '2:action:(list create restore)' \
+                        '3:snapshot:_utm_snapshots'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_utm "$@"
