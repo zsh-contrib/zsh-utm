@@ -25,6 +25,7 @@
             bats
             shellcheck
             gum
+            yq-go
           ];
         };
       }

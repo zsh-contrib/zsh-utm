@@ -35,6 +35,7 @@ _utm() {
 
     local -a commands
     commands=(
+        'create:Create a virtual machine from a TOML spec'
         'list:List virtual machines and their status'
         'start:Start a virtual machine'
         'stop:Stop a virtual machine'
@@ -55,6 +56,12 @@ _utm() {
 
         args)
             case "${line[1]}" in
+                create)
+                    _arguments -s -S \
+                        '(-f --force)'{-f,--force}'[Replace a virtual machine of the same name]' \
+                        '(-h --help)'{-h,--help}'[Show help message]' \
+                        '1:spec:_files -g "*.toml"'
+                    ;;
                 start)
                     _arguments -s -S \
                         '(-d --disposable)'{-d,--disposable}'[Start without saving changes to disk]' \

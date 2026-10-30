@@ -214,3 +214,171 @@ load_plugin() {
   [[ "$status" -eq 1 ]]
   [[ "$output" == *"Virtual machine not found"* ]]
 }
+
+# Prepares what utm create needs in the test directory: an ISO, a directory to share and the
+# bundle UTM would have made for the virtual machine called $1.
+prepare_create() {
+  export ZSH_UTM_DOCUMENTS="$BATS_TEST_TMPDIR/documents"
+  mkdir -p "$ZSH_UTM_DOCUMENTS/$1.utm/Data" "$BATS_TEST_TMPDIR/repo"
+  : > "$BATS_TEST_TMPDIR/installer.iso"
+  export LOG="$BATS_TEST_TMPDIR/calls.log"
+  : > "$LOG"
+}
+
+@test "utm create: requires a spec" {
+  run zsh -c "$(load_plugin); utm create"
+
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"Missing required argument: spec"* ]]
+}
+
+@test "utm create: fails when the spec does not exist" {
+  run zsh -c "$(load_plugin); utm create '$BATS_TEST_TMPDIR/missing.toml'"
+
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"Spec not found"* ]]
+}
+
+@test "utm create: needs a name" {
+  echo 'memory = 4096' > "$BATS_TEST_TMPDIR/vm.toml"
+
+  run zsh -c "$(load_plugin); utm create '$BATS_TEST_TMPDIR/vm.toml'"
+
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"The spec needs a name"* ]]
+}
+
+@test "utm create: rejects a backend other than qemu" {
+  printf 'name = "vm"\nbackend = "apple"\n' > "$BATS_TEST_TMPDIR/vm.toml"
+
+  run zsh -c "$(load_plugin); utm create '$BATS_TEST_TMPDIR/vm.toml'"
+
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"Unsupported backend: apple"* ]]
+}
+
+@test "utm create: rejects an unknown network mode" {
+  printf 'name = "vm"\n[network]\nmode = "bridged"\n' > "$BATS_TEST_TMPDIR/vm.toml"
+
+  run zsh -c "$(load_plugin); utm create '$BATS_TEST_TMPDIR/vm.toml'"
+
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"Unsupported network mode: bridged"* ]]
+}
+
+@test "utm create: fails when the iso does not exist" {
+  printf 'name = "vm"\niso = "nowhere.iso"\n' > "$BATS_TEST_TMPDIR/vm.toml"
+
+  run zsh -c "$(load_plugin); utm create '$BATS_TEST_TMPDIR/vm.toml'"
+
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"ISO not found"* ]]
+}
+
+@test "utm create: creates the vm and writes the rest of the spec into its config" {
+  prepare_create nixos
+  cat > "$BATS_TEST_TMPDIR/vm.toml" <<TOML
+name = "nixos"
+cpus = 4
+memory = 4096
+disk = 20480
+iso = "installer.iso"
+share = "repo"
+clipboard = true
+icon = "linux"
+
+[network]
+mode = "emulated"
+forward = [{ host = 2222, guest = 22 }]
+
+[plist]
+"Virtualization.Rosetta" = true
+"System.CPUCount" = 2
+TOML
+
+  run zsh -c "$(load_plugin); export STUB_LOG='$LOG'; utm create '$BATS_TEST_TMPDIR/vm.toml'"
+
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"Created 'nixos'"* ]]
+
+  # The plugin resolves symlinks of the paths in the spec, /var is /private/var on macOS
+  real="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
+  plist="$ZSH_UTM_DOCUMENTS/nixos.utm/config.plist"
+  run cat "$LOG"
+  [[ "$output" == *"osascript create.applescript nixos $real/installer.iso 4 4096 20480 true"* ]]
+  [[ "$output" == *"plutil -replace Drive.0.ImageName -string installer.iso $plist"* ]]
+  [[ "$output" == *"plutil -replace Network.0.Mode -string Emulated $plist"* ]]
+  [[ "$output" == *'plutil -replace Network.0.PortForward -json [{"Protocol":"TCP","GuestAddress":"","GuestPort":22,"HostAddress":"127.0.0.1","HostPort":2222}]'* ]]
+  [[ "$output" == *"plutil -replace Sharing.ClipboardSharing -bool true $plist"* ]]
+  [[ "$output" == *"plutil -replace Information.Icon -string linux $plist"* ]]
+  [[ "$output" == *"plutil -replace Virtualization.Rosetta -json true $plist"* ]]
+  [[ "$output" == *"plutil -replace System.CPUCount -json 2 $plist"* ]]
+  [[ "${lines[-1]}" == "osascript apply.applescript nixos $real/repo" ]]
+  [[ -f "$ZSH_UTM_DOCUMENTS/nixos.utm/Data/installer.iso" ]]
+}
+
+@test "utm create: falls back to defaults for a minimal spec" {
+  prepare_create vm
+  echo 'name = "vm"' > "$BATS_TEST_TMPDIR/vm.toml"
+
+  run zsh -c "$(load_plugin); export STUB_LOG='$LOG'; utm create '$BATS_TEST_TMPDIR/vm.toml'"
+
+  [[ "$status" -eq 0 ]]
+  run cat "$LOG"
+  [[ "$output" == *"osascript create.applescript vm  0 8192 81920 "* ]]
+  [[ "$output" == *"plutil -replace Network.0.Mode -string Shared"* ]]
+  [[ "$output" == *'"Hardware":"virtio-gpu-pci"'* ]]
+  [[ "$output" != *"PortForward"* ]]
+  [[ "$output" != *"ImageName"* ]]
+  [[ "$output" != *"ClipboardSharing"* ]]
+}
+
+@test "utm create: refuses to replace an existing vm without --force" {
+  prepare_create Ubuntu
+  echo 'name = "Ubuntu"' > "$BATS_TEST_TMPDIR/vm.toml"
+
+  run zsh -c "$(load_plugin); export STUB_LOG='$LOG'; utm create '$BATS_TEST_TMPDIR/vm.toml'"
+
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"Virtual machine already exists: Ubuntu"* ]]
+  run cat "$LOG"
+  [[ "$output" != *"create.applescript"* ]]
+}
+
+@test "utm create: --force deletes the existing vm first" {
+  prepare_create Ubuntu
+  echo 'name = "Ubuntu"' > "$BATS_TEST_TMPDIR/vm.toml"
+
+  run zsh -c "$(load_plugin); export STUB_LOG='$LOG'; utm create '$BATS_TEST_TMPDIR/vm.toml' --force"
+
+  [[ "$status" -eq 0 ]]
+  run cat "$LOG"
+  [[ "${lines[0]}" == "utmctl list" ]]
+  [[ "${lines[1]}" == "utmctl delete Ubuntu" ]]
+  [[ "${lines[2]}" == "osascript create.applescript Ubuntu"* ]]
+}
+
+@test "utm create: removes the vm again when writing its config fails" {
+  prepare_create vm
+  echo 'name = "vm"' > "$BATS_TEST_TMPDIR/vm.toml"
+
+  run zsh -c "$(load_plugin); export STUB_LOG='$LOG' STUB_PLUTIL_FAIL=1; utm create '$BATS_TEST_TMPDIR/vm.toml'"
+
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"Could not finish 'vm', removing it"* ]]
+  run cat "$LOG"
+  [[ "$output" == *"utmctl delete vm"* ]]
+}
+
+@test "utm create: makes the dictionaries on the way to a key path of the plist" {
+  prepare_create vm
+  printf 'name = "vm"\n[plist]\n"Virtualization.Rosetta" = true\n' > "$BATS_TEST_TMPDIR/vm.toml"
+
+  run zsh -c "$(load_plugin); export STUB_LOG='$LOG' STUB_PLUTIL_MISSING=1; utm create '$BATS_TEST_TMPDIR/vm.toml'"
+
+  [[ "$status" -eq 0 ]]
+  run cat "$LOG"
+  [[ "$output" == *"plutil -type Virtualization "* ]]
+  [[ "$output" == *"plutil -insert Virtualization -dictionary "* ]]
+  [[ "$output" == *"plutil -replace Virtualization.Rosetta -json true "* ]]
+}
